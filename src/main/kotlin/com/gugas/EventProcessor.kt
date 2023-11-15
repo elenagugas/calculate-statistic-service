@@ -1,18 +1,20 @@
 package com.gugas
 
+import java.math.BigInteger
 import java.util.concurrent.ConcurrentHashMap
 
 data class Event(
     val timestamp: Long,
     val x: Double,
-    val y: Int
+    val y: BigInteger,
+    val num: Int = 1
 )
 
 data class StatsResponse(
     val num: Int = 0,
     val xSum: Double = 0.0,
     val xAvg: Double = 0.0,
-    val ySum: Long = 0,
+    val ySum: BigInteger = BigInteger.ZERO,
     val yAvg: Double = 0.0,
 ) {
     fun formatToString(): String {
@@ -33,10 +35,10 @@ object EventProcessor {
     private const val X_MAX = 1
 
     //𝑦: An integer in 1,073,741,823..2,147,483,647.
-    private const val Y_MIN = 1_073_741_823
-    private const val Y_MAX = 2_147_483_647
+    private val Y_MIN = BigInteger.valueOf(1_073_741_823)
+    private val Y_MAX = BigInteger.valueOf(2_147_483_647)
 
-    private val data = ConcurrentHashMap<Int, Event>()
+    internal val data = ConcurrentHashMap<Long, Event>()
 
     fun parse(data: String): Event {
         val params = data.split(",")
@@ -49,7 +51,7 @@ object EventProcessor {
         if (x == null || X_MAX <= x || x <= X_MIN) {
             throw XIllegalArgumentException("X must be in 0..1, but received ${params[1]}")
         }
-        val y = params[2].toIntOrNull()
+        val y = params[2].toBigIntegerOrNull()
         if (y == null || Y_MAX <= y || y <= Y_MIN) {
             throw YIllegalArgumentException("Y must be in 1,073,741,823..2,147,483,647, but received ${params[2]}")
         }
@@ -57,46 +59,51 @@ object EventProcessor {
     }
 
     fun save(currentTimeMillis: Long, event: Event) {
-        cleanOldValues(currentTimeMillis)
         if (currentTimeMillis - event.timestamp < LIVE_MILLISECONDS) {
-            saveValue(Event(event.timestamp, event.x, event.y))
+            saveValue(currentTimeMillis, Event(event.timestamp, event.x, event.y))
         }
     }
 
     fun stats(currentTimeMillis: Long): StatsResponse {
-        synchronized(data) {
-            cleanOldValues(currentTimeMillis)
-            val num = data.count()
+        var num = 0
+        var xSum = 0.0
+        var ySum: BigInteger = BigInteger.ZERO
+        val minAcceptableTimestamp = getMinAcceptableTime(currentTimeMillis)
 
-            if (num == 0) {
-                return StatsResponse()
-            }
-
-            val xSum = data.map { it.value.x }.sumOf { it }
-            val ySum = (data.map { it.value.y.toLong() }.sumOf { it })
-
-            return StatsResponse(
-                num,
-                xSum,
-                xSum / num,
-                ySum,
-                ySum.toDouble() / num
-            )
+        data.filter { (timestamp, _) ->
+            timestamp >= minAcceptableTimestamp
+        }.forEach {
+            num += it.value.num
+            xSum += it.value.x
+            ySum += BigInteger.valueOf(it.value.y.toLong())
         }
-    }
 
-    private fun saveValue(event: Event) {
-        //TODO process clashes
-        val id: Int = (event.timestamp % LIVE_MILLISECONDS).toInt()
-        data[id] = event
-    }
-
-    private fun cleanOldValues(currentTimeMillis: Long) {
-        val minAcceptableTimestamp = currentTimeMillis - LIVE_MILLISECONDS
-        data.forEach { (key, event) ->
-            if (event.timestamp < minAcceptableTimestamp) {
-                data.remove(key)
-            }
+        if (num == 0) {
+            return StatsResponse()
         }
+
+        return StatsResponse(
+            num,
+            xSum,
+            xSum / num,
+            ySum,
+            ySum.toDouble() / num
+        )
     }
+
+    private fun saveValue(currentTimeMillis: Long, event: Event) {
+        val minAcceptableTimestamp = getMinAcceptableTime(currentTimeMillis)
+        val previousEvent = data.filter { (timestamp, _) ->
+            timestamp >= minAcceptableTimestamp
+        }.getOrDefault(event.timestamp, null)
+
+        data[event.timestamp] = Event(
+            event.timestamp,
+            event.x.plus(previousEvent?.x ?: 0.0),
+            event.y.plus(previousEvent?.y ?: BigInteger.ZERO),
+            event.num.plus(previousEvent?.num ?: 0)
+        )
+    }
+
+    private fun getMinAcceptableTime(currentTimeMillis: Long) = currentTimeMillis - LIVE_MILLISECONDS
 }
