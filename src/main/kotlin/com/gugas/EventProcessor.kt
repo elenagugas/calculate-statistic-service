@@ -68,11 +68,9 @@ object EventProcessor {
         var num = 0
         var xSum = 0.0
         var ySum: BigInteger = BigInteger.ZERO
-        val minAcceptableTimestamp = getMinAcceptableTime(currentTimeMillis)
+        cleanOldValues(currentTimeMillis)
 
-        data.filter { (timestamp, _) ->
-            timestamp >= minAcceptableTimestamp
-        }.forEach {
+        data.forEach {
             num += it.value.num
             xSum += it.value.x
             ySum += BigInteger.valueOf(it.value.y.toLong())
@@ -92,10 +90,8 @@ object EventProcessor {
     }
 
     private fun saveValue(currentTimeMillis: Long, event: Event) {
-        val minAcceptableTimestamp = getMinAcceptableTime(currentTimeMillis)
-        val previousEvent = data.filter { (timestamp, _) ->
-            timestamp >= minAcceptableTimestamp
-        }.getOrDefault(event.timestamp, null)
+        cleanOldValues(currentTimeMillis)
+        val previousEvent = data.getOrDefault(event.timestamp, null)
 
         data[event.timestamp] = Event(
             event.timestamp,
@@ -105,5 +101,11 @@ object EventProcessor {
         )
     }
 
-    private fun getMinAcceptableTime(currentTimeMillis: Long) = currentTimeMillis - LIVE_MILLISECONDS
-}
+    private fun cleanOldValues(currentTimeMillis: Long) {
+        val minAcceptableTimestamp = currentTimeMillis - LIVE_MILLISECONDS
+        data.forEach { (key, event) ->
+            if (event.timestamp < minAcceptableTimestamp) {
+                data.remove(key)
+            }
+        }
+    }}
