@@ -1,5 +1,7 @@
 package com.gugas
 
+import com.gugas.event.EventParser
+import com.gugas.event.EventProcessor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
@@ -21,7 +23,7 @@ class Controller {
     ) = withContext(Dispatchers.IO) {
         val response = async {
             try {
-                val event = EventProcessor.parse(data)
+                val event = EventParser.parseCSV(data)
                 EventProcessor.save(System.currentTimeMillis(), event)
                 println("Saved event: $event")
                 ResponseEntity("Successfully saved the data", HttpStatusCode.valueOf(202))
